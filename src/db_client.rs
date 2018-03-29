@@ -18,14 +18,17 @@ use mysql_pool::{CreateManager, MysqlConnectionManager};
 pub struct DatabaseClient<T: ManageConnection> {
   /// The Type of the Database.
   pub db_type: DatabaseType,
+  pub db_schema: String,
   /// The Underlying Connection Pool.
   underlying_pool: Pool<T>,
 }
+
 
 impl<T: ManageConnection> Clone for DatabaseClient<T> {
   fn clone(&self) -> DatabaseClient<T> {
     DatabaseClient {
       db_type: self.db_type.clone(),
+      db_schema: self.db_schema.clone(),
       underlying_pool: self.underlying_pool.clone(),
     }
   }
@@ -36,6 +39,7 @@ pub trait ImportDatabaseAdapter {
   /// Gets the Database Type.
   fn get_db_type(&self) -> DatabaseType;
 
+  fn get_database_schema(&self) -> String;
   /// Drops a Table in the Database.
   ///
   /// * `table_name` - The Table name to Drop.
@@ -91,6 +95,7 @@ impl DatabaseClient<PostgresConnectionManager> {
     );
     Ok(DatabaseClient::<PostgresConnectionManager> {
       db_type: DatabaseType::Psql,
+      db_schema: settings.get_database_schema(),
       underlying_pool: pool,
     })
   }
@@ -113,6 +118,7 @@ impl DatabaseClient<MysqlConnectionManager> {
     );
     Ok(DatabaseClient::<MysqlConnectionManager> {
       db_type: DatabaseType::Mysql,
+      db_schema: settings.get_database_schema(),
       underlying_pool: pool,
     })
   }
@@ -125,8 +131,13 @@ impl ImportDatabaseAdapter for DatabaseClient<PostgresConnectionManager> {
     self.db_type.clone()
   }
 
+  fn get_database_schema(&self) -> String {
+    trace!("DB Schema {}", self.db_schema.clone());
+    self.db_schema.clone()
+  }
+
   fn drop_table(&self, table_name: String) -> Result<()> {
-    trace!("drop_table was called for: [ {} ]", table_name);
+    trace!("drop_table was called for: [ {} ], {}", table_name, self.db_schema);
     // Get a aconnection from the pool.
     let connection = self.underlying_pool.get();
     if connection.is_err() {
@@ -135,7 +146,7 @@ impl ImportDatabaseAdapter for DatabaseClient<PostgresConnectionManager> {
     let connection = connection.unwrap();
 
     // Execute drop table statement.
-    let result = connection.execute(&format!("DROP TABLE IF EXISTS {}", table_name), &[]);
+    let result = connection.execute(&format!("DROP TABLE IF EXISTS {}.{}", self.db_schema, table_name), &[]);
     if result.is_err() {
       error!("drop_table err");
       error!("{:?}", result.err().unwrap());
@@ -157,7 +168,7 @@ impl ImportDatabaseAdapter for DatabaseClient<PostgresConnectionManager> {
 
     // Create the create table statement. `default` is reseverd word, so replace with
     // `_default`.
-    let mut creation_string = format!("CREATE TABLE IF NOT EXISTS {} (\n", table_name);
+    let mut creation_string = format!("CREATE TABLE IF NOT EXISTS {}.{} (\n", self.db_schema, table_name);
     for (key, val) in columns.into_iter() {
       creation_string += &format!("{} {},\n", key.replace("default", "_default"), val);
     }
@@ -206,7 +217,8 @@ impl ImportDatabaseAdapter for DatabaseClient<PostgresConnectionManager> {
     // Prepare a statemtn for deleting from a table.
     let mut prepared =
       format!(
-      "DELETE FROM {} WHERE {} = ",
+      "DELETE FROM {}.{} WHERE {} = ",
+      self.db_schema,
       table_name,
       column_name.clone(),
     );
@@ -250,7 +262,7 @@ impl ImportDatabaseAdapter for DatabaseClient<PostgresConnectionManager> {
     let connection = connection.unwrap();
 
     // Create the insert into statement.
-    let mut insert_string = format!("INSERT INTO {} (", table_name);
+    let mut insert_string = format!("INSERT INTO {}.{} (", self.db_schema,table_name);
     let mut types = BTreeMap::new();
 
     // We need to know all the types of the keys for the INSERT INTO () VALUES ()
@@ -313,8 +325,13 @@ impl ImportDatabaseAdapter for DatabaseClient<MysqlConnectionManager> {
     self.db_type.clone()
   }
 
+  fn get_database_schema(&self) -> String {
+    trace!("DB Schema {}", self.db_schema.clone());
+    self.db_schema.clone()
+  }
+
   fn drop_table(&self, table_name: String) -> Result<()> {
-    trace!("drop_table was called for: [ {} ]", table_name);
+    trace!("drop_table was called for: [ {} ], {}", table_name, self.db_schema);
 
     // Get connection from the underlying pool.
     let connection = self.underlying_pool.get();

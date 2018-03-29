@@ -23,6 +23,8 @@ struct Database {
   pub url: String,
   /// The Type of The Database.
   pub db_type: String,
+  //// Schema
+  pub db_schema: String,
 }
 
 /// The Canvas Data API Auth Configuration object.
@@ -100,6 +102,11 @@ impl Settings {
   /// Gets the database url provided by the settings.
   pub fn get_database_url(&self) -> String {
     self.database.url.clone()
+  }
+
+  /// Gets the database schema provided by the settings.
+  pub fn get_database_schema(&self) -> String {
+    self.database.db_schema.clone()
   }
 
   /// Gets the database type provided by the settings.
